@@ -1,0 +1,169 @@
+name: "Borrow UW Monitoring"
+description: "Underwriting monitoring for Borrow product"
+parameters:
+  - id: trigger
+    label: "Trigger"
+    type: select
+    default: "TD_CL12"
+    options:
+      - TD_CL08
+      - TD_CL12
+      - TD_CL14
+      - TD_CL18
+      - TD_CL20
+    filter_column: TRIGGER_
+widgets:
+  - id: approval-rate-by-segment
+    title: "Weekly Approval Rate by Segment"
+    type: line_chart
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              value['segment']::string as segment,
+              value['final_decision_result']::string as final_decision_result,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where 1=1
+              and trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and event_occurred_at >= current_date() - interval '3 months'
+      )
+      select
+        trigger_,
+        DATE_TRUNC('week', event_occurred_at) as score_date,
+        segment,
+        sum(iff(final_decision_result = 'APPROVED', 1, 0)) as num_approved,
+        count(*) as num_evaluated,
+        num_approved / num_evaluated as approval_rate
+      from cte
+      group by 1, 2, 3
+      order by 1, 2, 3
+    refresh: 600
+    series_column: SEGMENT
+    x_column: SCORE_DATE
+    y_column: APPROVAL_RATE
+    y_format: percent
+    layout: { x: 0, y: 0, w: 8, h: 3 }
+
+  - id: weekly-volume-by-segment
+    title: "Weekly Evaluation Volume by Segment"
+    type: line_chart
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              value['segment']::string as segment,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where 1=1
+              and trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and event_occurred_at >= current_date() - interval '3 months'
+      )
+      select
+        trigger_,
+        DATE_TRUNC('week', event_occurred_at) as score_date,
+        segment,
+        count(*) as num_evaluated
+      from cte
+      group by 1, 2, 3
+      order by 1, 2, 3
+    refresh: 600
+    series_column: SEGMENT
+    x_column: SCORE_DATE
+    y_column: NUM_EVALUATED
+    layout: { x: 0, y: 3, w: 8, h: 3 }
+
+  - id: current-approval-rate
+    title: "Approval Rate (This Week)"
+    type: kpi
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              value['final_decision_result']::string as final_decision_result,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and event_occurred_at >= DATE_TRUNC('week', current_date())
+      )
+      select
+        trigger_,
+        round(100.0 * sum(iff(final_decision_result = 'APPROVED', 1, 0)) / nullif(count(*), 0), 1) as value
+      from cte
+      group by 1
+      order by 1
+    refresh: 300
+    suffix: "%"
+    layout: { x: 8, y: 0, w: 4, h: 1 }
+
+  - id: total-evaluations-week
+    title: "Evaluations (This Week)"
+    type: kpi
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and event_occurred_at >= DATE_TRUNC('week', current_date())
+      )
+      select trigger_, count(*) as value
+      from cte
+      group by 1
+      order by 1
+    refresh: 300
+    layout: { x: 8, y: 1, w: 4, h: 1 }
+
+  - id: total-approved-week
+    title: "Approved (This Week)"
+    type: kpi
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              value['final_decision_result']::string as final_decision_result,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and final_decision_result = 'APPROVED'
+              and event_occurred_at >= DATE_TRUNC('week', current_date())
+      )
+      select trigger_, count(*) as value
+      from cte
+      group by 1
+      order by 1
+    refresh: 300
+    layout: { x: 8, y: 2, w: 4, h: 1 }
+
+  - id: segment-breakdown
+    title: "Segment Breakdown (Last 30 Days)"
+    type: table
+    source: snowflake
+    query: >
+      with cte as (
+          select
+              value['trigger']::string as trigger_,
+              value['segment']::string as segment,
+              value['final_decision_result']::string as final_decision_result,
+              event_metadata:time::timestamp_ntz as event_occurred_at
+          from cash_data_bot.raw.underwriting_evaluation_events
+          where trigger_ in ('TD_CL08','TD_CL12','TD_CL14','TD_CL18','TD_CL20')
+              and event_occurred_at >= current_date() - interval '30 days'
+      )
+      select
+        trigger_,
+        segment,
+        count(*) as num_evaluated,
+        sum(iff(final_decision_result = 'APPROVED', 1, 0)) as num_approved,
+        round(100.0 * num_approved / nullif(num_evaluated, 0), 2) as approval_rate_pct
+      from cte
+      group by 1, 2
+      order by 1, 3 desc
+    refresh: 600
+    layout: { x: 8, y: 3, w: 4, h: 3 }
