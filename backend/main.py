@@ -1,9 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Any
 import yaml
 import os
+import sys
+
+# Ensure backend/ is on the Python path for both local and packaged runs
+sys.path.insert(0, os.path.dirname(__file__))
 
 from data_sources.snowflake_source import run_snowflake_query
 from data_sources.api_source import proxy_api_call
@@ -92,6 +98,17 @@ async def get_deploy_logs():
         return await fetch_all_deploy_logs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Serve built frontend static files (if they exist)
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve the React SPA for any non-API route."""
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 if __name__ == "__main__":

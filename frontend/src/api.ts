@@ -1,6 +1,7 @@
 import { DashboardConfig, QueryResult } from "./types";
 
-const BASE = "";
+// In dev, Vite proxies /api to localhost:8000. In prod, set VITE_API_BASE.
+const BASE = import.meta.env.VITE_API_BASE || "";
 
 export async function fetchDashboards(): Promise<DashboardConfig[]> {
   const res = await fetch(`${BASE}/api/dashboards`);
