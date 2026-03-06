@@ -3,4 +3,5 @@ uvicorn==0.30.0
 pyyaml==6.0.1
 httpx==0.27.0
 cachetools==5.4.0
-sq-pysnowflake==0.10.0
+sq-pysnowflake>=4.0.0
+block-cloud-auth

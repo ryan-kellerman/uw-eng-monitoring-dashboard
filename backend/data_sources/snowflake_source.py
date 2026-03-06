@@ -31,13 +31,42 @@ async def run_snowflake_query(sql: str, warehouse: str | None = None) -> dict:
     return result
 
 
+import os
+
+def _get_auth():
+    """Get Snowflake auth - use block_cloud_auth on GCP/cloud, default (Okta SSO) locally."""
+    # Only use block_cloud_auth in cloud environments (GCP, AWS, Databricks)
+    if not any(os.environ.get(v) for v in (
+        "K_SERVICE",           # Cloud Run
+        "SERVICE_ACCOUNT",     # GCP workstation/notebook
+        "CLOUD_ML_JOB_SA",    # Vertex AI
+        "NAMESPACE",           # SKI/K8s
+    )):
+        return None
+    try:
+        from block_cloud_auth.authenticators.snowflake import (
+            SnowflakeAuthenticator,
+            SnowflakeProvider,
+        )
+        return SnowflakeAuthenticator(SnowflakeProvider())
+    except ImportError:
+        return None
+
+
 def _execute_sync(sql: str, warehouse: str | None) -> dict:
     try:
         from pysnowflake.session import Session
 
-        sess = Session(connection_override_args={
-            "warehouse": warehouse or DEFAULT_WAREHOUSE,
-        })
+        auth = _get_auth()
+        session_kwargs = {
+            "connection_override_args": {
+                "warehouse": warehouse or DEFAULT_WAREHOUSE,
+            },
+        }
+        if auth is not None:
+            session_kwargs["auth"] = auth
+
+        sess = Session(**session_kwargs)
         sess.open()
         try:
             cursor = sess.execute(sql)

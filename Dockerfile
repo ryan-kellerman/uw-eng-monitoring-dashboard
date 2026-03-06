@@ -1,20 +1,11 @@
-# Build frontend
-FROM node:20-slim AS frontend-build
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-COPY frontend/ ./
-RUN npm run build
-
-# Backend + serve frontend
 FROM python:3.12-slim
 WORKDIR /app
 
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY vendor/ ./vendor/
+RUN pip install --no-cache-dir --no-index --find-links=vendor/ vendor/*.whl && rm -rf vendor/
 
 COPY backend/ ./backend/
-COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+COPY frontend/dist ./frontend/dist
 
 EXPOSE 8000
 
